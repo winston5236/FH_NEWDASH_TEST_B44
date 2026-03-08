@@ -3,8 +3,7 @@ import { BrowserRouter as Router, Routes, Route, useParams, Link } from "react-r
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query"
 import { LucideMap, LayoutDashboard, Plus, Wind, Thermometer, Droplets, Zap, ChevronRight } from "lucide-react"
 
-// --- STYLING (Tailwind CSS is assumed via className) ---
-// Note: In a real project, these imports come from your @/components/ui/ folder
+// UI Components
 import { Sidebar, SidebarProvider, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -15,8 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 const queryClient = new QueryClient()
 
-// --- 1. DATA LOGIC (JavaScript) ---
-// Custom hook to manage the user-created "Pages" (Devices)
+// --- 1. DATA LOGIC ---
 const useDeviceManager = () => {
   const [devices, setDevices] = useState(() => {
     const saved = localStorage.getItem("user_devices")
@@ -32,7 +30,7 @@ const useDeviceManager = () => {
   return { devices, addDevice }
 }
 
-// --- 2. THE MAP VIEW (Homepage) ---
+// --- 2. THE MAP VIEW ---
 const HomePage = ({ devices }) => (
   <div className="p-6 h-full flex flex-col gap-6 bg-slate-50/50">
     <header className="flex flex-col gap-1">
@@ -40,22 +38,20 @@ const HomePage = ({ devices }) => (
       <p className="text-slate-500 font-medium">Global PM2.5 monitoring via LASS Network</p>
     </header>
 
-    <div className="flex-1 relative rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden">
-      {/* Decorative Grid Background */}
+    <div className="flex-1 relative rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden min-h-[500px]">
       <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px]" />
       
       {devices.map((device) => (
         <div 
           key={device.id}
-          className="absolute"
+          className="absolute transition-all duration-500"
           style={{ left: `${device.lng}%`, top: `${device.lat}%`, transform: 'translate(-50%, -50%)' }}
         >
           <div className="relative flex items-center justify-center">
-            {/* The Radiating "Pulse" Visual */}
             <div className="absolute h-16 w-16 rounded-full bg-emerald-500/20 animate-ping" />
             <div className="absolute h-8 w-8 rounded-full bg-emerald-400/30 animate-pulse" />
             <Link to={`/device/${device.id}`} className="z-10 group">
-              <div className="bg-emerald-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg border-2 border-white hover:scale-110 transition-transform">
+              <div className="bg-emerald-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg border-2 border-white hover:scale-110 transition-transform whitespace-nowrap">
                 {device.name}
               </div>
             </Link>
@@ -73,7 +69,7 @@ const HomePage = ({ devices }) => (
   </div>
 )
 
-// --- 3. THE DEVICE DASHBOARD (Dynamic Page) ---
+// --- 3. THE DEVICE DASHBOARD ---
 const DeviceDashboard = () => {
   const { id } = useParams()
   
@@ -82,7 +78,8 @@ const DeviceDashboard = () => {
     queryFn: async () => {
       const res = await fetch(`https://pm25.lass-net.org/data/last-all-lass.json`)
       const json = await res.json()
-      return json.feeds.find(f => f.device_id === id)
+      // Fallback for case where device is not in the feed
+      return json.feeds.find(f => f.device_id === id) || null
     },
     refetchInterval: 30000 
   })
@@ -96,13 +93,20 @@ const DeviceDashboard = () => {
     </div>
   )
 
+  if (!data) return (
+    <div className="p-8 text-center flex flex-col items-center justify-center h-[50vh]">
+      <h2 className="text-2xl font-bold text-slate-400">Device Offline or ID Incorrect</h2>
+      <p className="text-slate-500">Could not find data for {id} on the LASS network.</p>
+    </div>
+  )
+
   return (
     <div className="p-8 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="flex flex-col gap-1">
         <h2 className="text-4xl font-black text-slate-900">{id}</h2>
         <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
           <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-          Live Sync Active • Last Update: {data?.timestamp}
+          Live Sync Active • Last Update: {data?.timestamp || 'Just now'}
         </div>
       </div>
 
@@ -120,23 +124,34 @@ const DeviceDashboard = () => {
   )
 }
 
-const MetricTile = ({ label, val, unit, icon }) => (
-  <Card className="rounded-2xl border-none shadow-lg hover:shadow-xl transition-shadow bg-white">
-    <CardHeader className="flex flex-row items-center justify-between pb-2">
-      <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</CardTitle>
-      {icon}
-    </CardHeader>
-    <CardContent>
-      <div className="text-3xl font-black text-slate-900">{val} <span className="text-sm font-medium text-slate-400">{unit}</span></div>
-      <Progress value={Math.min(val, 100)} className="h-1.5 mt-4" />
-    </CardContent>
-  </Card>
-)
+const MetricTile = ({ label, val, unit, icon }) => {
+  const numericVal = parseFloat(val) || 0;
+  return (
+    <Card className="rounded-2xl border-none shadow-lg hover:shadow-xl transition-shadow bg-white">
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</CardTitle>
+        {icon}
+      </CardHeader>
+      <CardContent>
+        <div className="text-3xl font-black text-slate-900">{val ?? '--'} <span className="text-sm font-medium text-slate-400">{unit}</span></div>
+        <Progress value={Math.min(numericVal, 100)} className="h-1.5 mt-4" />
+      </CardContent>
+    </Card>
+  )
+}
 
-// --- 4. MASTER LAYOUT (Navigation & CSS Containers) ---
+// --- 4. MASTER LAYOUT ---
 const MainContent = () => {
   const { devices, addDevice } = useDeviceManager()
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [form, setForm] = useState({ deviceId: '', name: '', lat: '', lng: '' })
+
+  const handleAddDevice = () => {
+    if (!form.deviceId || !form.name) return;
+    addDevice(form);
+    setForm({ deviceId: '', name: '', lat: '', lng: '' });
+    setIsDialogOpen(false);
+  }
 
   return (
     <SidebarProvider>
@@ -150,7 +165,7 @@ const MainContent = () => {
               <span className="font-black text-xl tracking-tight uppercase">Aether</span>
             </div>
 
-            <Dialog>
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button className="w-full h-11 rounded-xl shadow-lg shadow-slate-200 bg-slate-900 hover:bg-slate-800 transition-all font-bold">
                   <Plus className="mr-2 h-4 w-4" /> Create Location
@@ -165,9 +180,9 @@ const MainContent = () => {
                   <Input placeholder="Custom Nickname" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
                   <div className="grid grid-cols-2 gap-4">
                     <Input placeholder="Lat (0-100)" value={form.lat} onChange={e => setForm({...form, lat: e.target.value})} />
-                    <Input placeholder="Lng (0-100)" value={e => setForm({...form, lng: e.target.value})} />
+                    <Input placeholder="Lng (0-100)" value={form.lng} onChange={e => setForm({...form, lng: e.target.value})} />
                   </div>
-                  <Button onClick={() => addDevice(form)} className="h-12 rounded-xl bg-slate-900 font-bold">Deploy Analytics</Button>
+                  <Button onClick={handleAddDevice} className="h-12 rounded-xl bg-slate-900 font-bold">Deploy Analytics</Button>
                 </div>
               </DialogContent>
             </Dialog>
