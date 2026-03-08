@@ -3,174 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aether v2 | Command Center</title>
+    <title>Aether | Geospatial Command Center</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        @keyframes pulse-ring { 0% { transform: scale(.33); } 80%, 100% { opacity: 0; } }
-        .pulse-dot { position: relative; width: 12px; height: 12px; border-radius: 50%; background: #10b981; }
-        .pulse-dot::before { content: ''; position: absolute; display: block; width: 300%; height: 300%; box-sizing: border-box; margin-left: -100%; margin-top: -100%; border-radius: 45px; background-color: #10b981; animation: pulse-ring 1.25s cubic-bezier(0.215, 0.61, 0.355, 1) infinite; }
-        .map-grid { background-color: #020617; background-image: radial-gradient(#1e293b 1px, transparent 1px); background-size: 30px 30px; }
+        #map { height: 100%; width: 100%; border-radius: 2rem; z-index: 1; }
+        .leaflet-container { background: #020617 !important; }
+        /* Professional Pulse Marker */
+        .custom-pulse {
+            width: 12px; height: 12px; background: #6366f1; border-radius: 50%;
+            box-shadow: 0 0 0 rgba(99, 102, 241, 0.4); animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); } 70% { box-shadow: 0 0 0 20px rgba(99, 102, 241, 0); } 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); } }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900 font-sans antialiased">
+<body class="bg-slate-50 text-slate-900 font-sans overflow-hidden">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useRef } = React;
 
         const App = () => {
             const [view, setView] = useState('map');
-            const [selectedDevice, setSelectedDevice] = useState(null);
-            const [searchQuery, setSearchQuery] = useState("");
             const [devices, setDevices] = useState(() => {
                 const saved = localStorage.getItem("user_devices");
                 return saved ? JSON.parse(saved) : [
-                    { id: 'B827EB63D1C8', name: 'Example Location', lat: 35, lng: 40 }
+                    { id: 'B827EB63D1C8', name: 'Base Station', lat: 25.0330, lng: 121.5654 }
                 ];
             });
+            const mapRef = useRef(null);
+            const leafletMap = useRef(null);
 
-            useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [view, devices, selectedDevice]);
+            // Initialize Leaflet Map
+            useEffect(() => {
+                if (view === 'map' && !leafletMap.current) {
+                    // Create map centered on first device
+                    leafletMap.current = L.map('map', { zoomControl: false }).setView([devices[0].lat, devices[0].lng], 12);
+                    
+                    // Add Dark Mode Tiles (CartoDB Dark Matter)
+                    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                        attribution: '&copy; OpenStreetMap &copy; CARTO'
+                    }).addTo(leafletMap.current);
+                }
 
-            // Filtered device list based on search
-            const filteredDevices = useMemo(() => {
-                return devices.filter(d => d.name.toLowerCase().includes(searchQuery.toLowerCase()) || d.id.includes(searchQuery));
-            }, [devices, searchQuery]);
+                // Update markers whenever devices change
+                if (leafletMap.current) {
+                    // Clear old markers if necessary or just add new ones
+                    devices.forEach(dev => {
+                        const icon = L.divIcon({ className: 'custom-pulse', iconSize: [12, 12] });
+                        L.marker([dev.lat, dev.lng], { icon })
+                         .addTo(leafletMap.current)
+                         .bindPopup(`<b class="font-bold">${dev.name}</b><br><span class="text-xs text-slate-500">${dev.id}</span>`);
+                    });
+                }
+            }, [view, devices]);
 
             const handleAdd = (e) => {
                 e.preventDefault();
                 const fd = new FormData(e.target);
-                const newDev = { id: fd.get('id').trim(), name: fd.get('name'), lat: fd.get('lat'), lng: fd.get('lng') };
+                const newDev = { 
+                    id: fd.get('id'), 
+                    name: fd.get('name'), 
+                    lat: parseFloat(fd.get('lat')), 
+                    lng: parseFloat(fd.get('lng')) 
+                };
                 const updated = [...devices, newDev];
                 setDevices(updated);
                 localStorage.setItem("user_devices", JSON.stringify(updated));
                 e.target.reset();
+                setView('map');
             };
 
             return (
-                <div className="flex h-screen w-full overflow-hidden bg-white">
+                <div className="flex h-screen w-full">
                     {/* SIDEBAR */}
-                    <aside className="w-80 border-r border-slate-100 flex flex-col p-6 z-20 bg-white">
-                        <div className="flex items-center gap-3 mb-8">
-                            <div className="h-10 w-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-100">
-                                <i data-lucide="zap"></i>
+                    <aside className="w-80 border-r border-slate-200 bg-white p-6 flex flex-col z-20 shadow-xl">
+                        <div className="flex items-center gap-3 mb-10">
+                            <div className="h-10 w-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                                <i data-lucide="satellite"></i>
                             </div>
-                            <span className="font-bold text-xl tracking-tight">AETHER <span className="text-indigo-600">OS</span></span>
+                            <span className="font-black text-xl tracking-tighter italic">AETHER MAPS</span>
                         </div>
 
-                        {/* Search Bar (New Feature) */}
-                        <div className="relative mb-6">
-                            <i data-lucide="search" className="absolute left-3 top-3 w-4 h-4 text-slate-400"></i>
-                            <input 
-                                type="text" 
-                                placeholder="Filter nodes..." 
-                                className="w-full bg-slate-50 border-none rounded-xl py-2.5 pl-10 pr-4 text-sm focus:ring-2 ring-indigo-500 transition-all"
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                            />
-                        </div>
-
-                        <nav className="flex-1 overflow-y-auto space-y-1">
-                            <button onClick={() => setView('map')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-all ${view==='map'?'bg-indigo-50 text-indigo-700':'text-slate-500 hover:bg-slate-50'}`}>
-                                <i data-lucide="globe" className="w-4 h-4"></i> Network Map
+                        <nav className="flex-1 space-y-2">
+                            <button onClick={() => setView('map')} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${view==='map'?'bg-slate-100 text-indigo-600':'text-slate-400'}`}>
+                                <i data-lucide="map"></i> Live View
                             </button>
-                            
-                            <div className="pt-4 pb-2 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active Nodes</div>
-                            {filteredDevices.map(d => (
-                                <button key={d.id} onClick={() => { setSelectedDevice(d); setView('map'); }} className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 group">
-                                    <div className="flex items-center gap-3 truncate">
-                                        <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                                        <span className="truncate">{d.name}</span>
-                                    </div>
-                                    <i data-lucide="chevron-right" className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-all"></i>
-                                </button>
-                            ))}
+                            <button onClick={() => setView('add')} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${view==='add'?'bg-slate-100 text-indigo-600':'text-slate-400'}`}>
+                                <i data-lucide="plus-circle"></i> Provision Node
+                            </button>
                         </nav>
-
-                        <button onClick={() => setView('add')} className="mt-4 w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-sm shadow-xl hover:bg-indigo-600 transition-all">
-                            + New Deployment
-                        </button>
+                        
+                        <div className="mt-auto bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Status</p>
+                            <div className="flex items-center gap-2 text-xs font-bold text-emerald-600">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                Geospatial Sync Active
+                            </div>
+                        </div>
                     </aside>
 
-                    {/* MAIN AREA */}
-                    <main className="flex-1 relative flex flex-col bg-slate-50">
+                    {/* MAP CONTENT */}
+                    <main className="flex-1 p-8 bg-slate-50 flex flex-col">
                         {view === 'map' ? (
-                            <div className="h-full w-full relative map-grid p-6">
-                                {/* Header Overlay */}
-                                <div className="absolute top-10 left-10 z-10 pointer-events-none">
-                                    <h1 className="text-white text-4xl font-black tracking-tighter">GLOBAL OPS</h1>
-                                    <div className="flex items-center gap-2 text-indigo-400 font-mono text-xs mt-2 uppercase tracking-widest">
-                                        <span className="pulse-dot"></span> System Live • {devices.length} Nodes Online
+                            <div className="flex-1 relative bg-slate-900 rounded-[2.5rem] overflow-hidden shadow-2xl border-8 border-white">
+                                <div id="map"></div>
+                                <div className="absolute top-6 left-6 z-[1000] pointer-events-none">
+                                    <div className="bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-lg border border-white/20">
+                                        <h2 className="text-slate-900 font-black tracking-tighter text-xl uppercase italic">Network Layer</h2>
+                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-none">Global Environmental Index</p>
                                     </div>
                                 </div>
-
-                                {/* Map Points */}
-                                {filteredDevices.map(d => (
-                                    <div key={d.id} className="absolute group" style={{ left: `${d.lng}%`, top: `${d.lat}%` }}>
-                                        <div 
-                                            onClick={() => setSelectedDevice(d)}
-                                            className="relative flex flex-col items-center cursor-pointer transform -translate-x-1/2 -translate-y-1/2"
-                                        >
-                                            <div className="bg-white/10 backdrop-blur-md border border-white/20 p-1 rounded-full group-hover:scale-125 transition-all">
-                                                <div className="h-3 w-3 bg-indigo-500 rounded-full shadow-[0_0_15px_rgba(99,102,241,0.8)]"></div>
-                                            </div>
-                                            <div className="mt-2 bg-slate-900/80 backdrop-blur-xl text-white px-3 py-1 rounded-lg text-[10px] font-bold border border-white/10 opacity-0 group-hover:opacity-100 transition-all uppercase tracking-tighter">
-                                                {d.name}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-
-                                {/* Device Detail Panel (New Feature) */}
-                                {selectedDevice && (
-                                    <div className="absolute bottom-10 right-10 w-80 bg-white/95 backdrop-blur-xl p-6 rounded-3xl shadow-2xl border border-white/20 animate-in slide-in-from-right-10 fade-in duration-500">
-                                        <div className="flex justify-between items-start mb-6">
-                                            <div>
-                                                <h3 className="font-black text-xl text-slate-900 uppercase">{selectedDevice.name}</h3>
-                                                <p className="text-[10px] text-slate-400 font-mono">{selectedDevice.id}</p>
-                                            </div>
-                                            <button onClick={() => setSelectedDevice(null)} className="p-1 hover:bg-slate-100 rounded-full transition-colors">
-                                                <i data-lucide="x" className="w-4 h-4"></i>
-                                            </button>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-3 mb-6">
-                                            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                                                <p className="text-[10px] font-bold text-slate-400 mb-1">PM 2.5</p>
-                                                <p className="text-xl font-black text-indigo-600">24 <span className="text-[10px] font-medium text-slate-400">μg</span></p>
-                                            </div>
-                                            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                                                <p className="text-[10px] font-bold text-slate-400 mb-1">STATION</p>
-                                                <p className="text-xl font-black text-slate-900">ACTV</p>
-                                            </div>
-                                        </div>
-                                        <button className="w-full bg-indigo-600 text-white py-3 rounded-xl text-xs font-bold hover:shadow-lg transition-all">
-                                            Open Full Analytics
-                                        </button>
-                                    </div>
-                                )}
                             </div>
                         ) : (
                             <div className="h-full flex items-center justify-center">
-                                <form onSubmit={(e) => { handleAdd(e); setView('map'); }} className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100 w-full max-w-md">
-                                    <h2 className="text-3xl font-black mb-8 tracking-tighter uppercase text-slate-900">Provision Node</h2>
+                                <form onSubmit={handleAdd} className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100 w-full max-w-md">
+                                    <h2 className="text-2xl font-black mb-6 uppercase tracking-tighter">Register New Lat/Lng</h2>
                                     <div className="space-y-4">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Hardware Identifier</label>
-                                            <input name="id" placeholder="e.g. B827EB..." className="w-full bg-slate-50 border-none p-4 rounded-2xl text-sm" required />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Alias</label>
-                                            <input name="name" placeholder="Station Nickname" className="w-full bg-slate-50 border-none p-4 rounded-2xl text-sm" required />
-                                        </div>
+                                        <input name="id" placeholder="LASS Device ID" className="w-full bg-slate-50 p-4 rounded-2xl text-sm border-none outline-none focus:ring-2 ring-indigo-500" required />
+                                        <input name="name" placeholder="Location Name" className="w-full bg-slate-50 p-4 rounded-2xl text-sm border-none outline-none focus:ring-2 ring-indigo-500" required />
                                         <div className="grid grid-cols-2 gap-4">
-                                            <input name="lat" placeholder="Y-Pos (0-100)" className="bg-slate-50 border-none p-4 rounded-2xl text-sm" required />
-                                            <input name="lng" placeholder="X-Pos (0-100)" className="bg-slate-50 border-none p-4 rounded-2xl text-sm" required />
+                                            <input name="lat" type="number" step="any" placeholder="Latitude (e.g. 25.0)" className="bg-slate-50 p-4 rounded-2xl text-sm" required />
+                                            <input name="lng" type="number" step="any" placeholder="Longitude (e.g. 121.5)" className="bg-slate-50 p-4 rounded-2xl text-sm" required />
                                         </div>
-                                        <button className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-sm uppercase tracking-widest mt-4 shadow-xl shadow-indigo-100 hover:scale-[1.02] transition-all">
-                                            Deploy Node
-                                        </button>
+                                        <button className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest mt-4 shadow-xl shadow-slate-200">Deploy to Map</button>
                                     </div>
                                 </form>
                             </div>
@@ -182,6 +142,600 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
+        setTimeout(() => lucide.createIcons(), 500);
     </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aether | Geospatial Command Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        #map { height: 100%; width: 100%; border-radius: 2rem; z-index: 1; }
+        .leaflet-container { background: #020617 !important; }
+        /* Professional Pulse Marker */
+        .custom-pulse {
+            width: 12px; height: 12px; background: #6366f1; border-radius: 50%;
+            box-shadow: 0 0 0 rgba(99, 102, 241, 0.4); animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); } 70% { box-shadow: 0 0 0 20px rgba(99, 102, 241, 0); } 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); } }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans overflow-hidden">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const App = () => {
+            const [view, setView] = useState('map');
+            const [devices, setDevices] = useState(() => {
+                const saved = localStorage.getItem("user_devices");
+                return saved ? JSON.parse(saved) : [
+                    { id: 'B827EB63D1C8', name: 'Base Station', lat: 25.0330, lng: 121.5654 }
+                ];
+            });
+            const mapRef = useRef(null);
+            const leafletMap = useRef(null);
+
+            // Initialize Leaflet Map
+            useEffect(() => {
+                if (view === 'map' && !leafletMap.current) {
+                    // Create map centered on first device
+                    leafletMap.current = L.map('map', { zoomControl: false }).setView([devices[0].lat, devices[0].lng], 12);
+                    
+                    // Add Dark Mode Tiles (CartoDB Dark Matter)
+                    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                        attribution: '&copy; OpenStreetMap &copy; CARTO'
+                    }).addTo(leafletMap.current);
+                }
+
+                // Update markers whenever devices change
+                if (leafletMap.current) {
+                    // Clear old markers if necessary or just add new ones
+                    devices.forEach(dev => {
+                        const icon = L.divIcon({ className: 'custom-pulse', iconSize: [12, 12] });
+                        L.marker([dev.lat, dev.lng], { icon })
+                         .addTo(leafletMap.current)
+                         .bindPopup(`<b class="font-bold">${dev.name}</b><br><span class="text-xs text-slate-500">${dev.id}</span>`);
+                    });
+                }
+            }, [view, devices]);
+
+            const handleAdd = (e) => {
+                e.preventDefault();
+                const fd = new FormData(e.target);
+                const newDev = { 
+                    id: fd.get('id'), 
+                    name: fd.get('name'), 
+                    lat: parseFloat(fd.get('lat')), 
+                    lng: parseFloat(fd.get('lng')) 
+                };
+                const updated = [...devices, newDev];
+                setDevices(updated);
+                localStorage.setItem("user_devices", JSON.stringify(updated));
+                e.target.reset();
+                setView('map');
+            };
+
+            return (
+                <div className="flex h-screen w-full">
+                    {/* SIDEBAR */}
+                    <aside className="w-80 border-r border-slate-200 bg-white p-6 flex flex-col z-20 shadow-xl">
+                        <div className="flex items-center gap-3 mb-10">
+                            <div className="h-10 w-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                                <i data-lucide="satellite"></i>
+                            </div>
+                            <span className="font-black text-xl tracking-tighter italic">AETHER MAPS</span>
+                        </div>
+
+                        <nav className="flex-1 space-y-2">
+                            <button onClick={() => setView('map')} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${view==='map'?'bg-slate-100 text-indigo-600':'text-slate-400'}`}>
+                                <i data-lucide="map"></i> Live View
+                            </button>
+                            <button onClick={() => setView('add')} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${view==='add'?'bg-slate-100 text-indigo-600':'text-slate-400'}`}>
+                                <i data-lucide="plus-circle"></i> Provision Node
+                            </button>
+                        </nav>
+                        
+                        <div className="mt-auto bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Status</p>
+                            <div className="flex items-center gap-2 text-xs font-bold text-emerald-600">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                Geospatial Sync Active
+                            </div>
+                        </div>
+                    </aside>
+
+                    {/* MAP CONTENT */}
+                    <main className="flex-1 p-8 bg-slate-50 flex flex-col">
+                        {view === 'map' ? (
+                            <div className="flex-1 relative bg-slate-900 rounded-[2.5rem] overflow-hidden shadow-2xl border-8 border-white">
+                                <div id="map"></div>
+                                <div className="absolute top-6 left-6 z-[1000] pointer-events-none">
+                                    <div className="bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-lg border border-white/20">
+                                        <h2 className="text-slate-900 font-black tracking-tighter text-xl uppercase italic">Network Layer</h2>
+                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-none">Global Environmental Index</p>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="h-full flex items-center justify-center">
+                                <form onSubmit={handleAdd} className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100 w-full max-w-md">
+                                    <h2 className="text-2xl font-black mb-6 uppercase tracking-tighter">Register New Lat/Lng</h2>
+                                    <div className="space-y-4">
+                                        <input name="id" placeholder="LASS Device ID" className="w-full bg-slate-50 p-4 rounded-2xl text-sm border-none outline-none focus:ring-2 ring-indigo-500" required />
+                                        <input name="name" placeholder="Location Name" className="w-full bg-slate-50 p-4 rounded-2xl text-sm border-none outline-none focus:ring-2 ring-indigo-500" required />
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <input name="lat" type="number" step="any" placeholder="Latitude (e.g. 25.0)" className="bg-slate-50 p-4 rounded-2xl text-sm" required />
+                                            <input name="lng" type="number" step="any" placeholder="Longitude (e.g. 121.5)" className="bg-slate-50 p-4 rounded-2xl text-sm" required />
+                                        </div>
+                                        <button className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest mt-4 shadow-xl shadow-slate-200">Deploy to Map</button>
+                                    </div>
+                                </form>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+        setTimeout(() => lucide.createIcons(), 500);
+    </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aether | Geospatial Command Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        #map { height: 100%; width: 100%; border-radius: 2rem; z-index: 1; }
+        .leaflet-container { background: #020617 !important; }
+        /* Professional Pulse Marker */
+        .custom-pulse {
+            width: 12px; height: 12px; background: #6366f1; border-radius: 50%;
+            box-shadow: 0 0 0 rgba(99, 102, 241, 0.4); animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); } 70% { box-shadow: 0 0 0 20px rgba(99, 102, 241, 0); } 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); } }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans overflow-hidden">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const App = () => {
+            const [view, setView] = useState('map');
+            const [devices, setDevices] = useState(() => {
+                const saved = localStorage.getItem("user_devices");
+                return saved ? JSON.parse(saved) : [
+                    { id: 'B827EB63D1C8', name: 'Base Station', lat: 25.0330, lng: 121.5654 }
+                ];
+            });
+            const mapRef = useRef(null);
+            const leafletMap = useRef(null);
+
+            // Initialize Leaflet Map
+            useEffect(() => {
+                if (view === 'map' && !leafletMap.current) {
+                    // Create map centered on first device
+                    leafletMap.current = L.map('map', { zoomControl: false }).setView([devices[0].lat, devices[0].lng], 12);
+                    
+                    // Add Dark Mode Tiles (CartoDB Dark Matter)
+                    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                        attribution: '&copy; OpenStreetMap &copy; CARTO'
+                    }).addTo(leafletMap.current);
+                }
+
+                // Update markers whenever devices change
+                if (leafletMap.current) {
+                    // Clear old markers if necessary or just add new ones
+                    devices.forEach(dev => {
+                        const icon = L.divIcon({ className: 'custom-pulse', iconSize: [12, 12] });
+                        L.marker([dev.lat, dev.lng], { icon })
+                         .addTo(leafletMap.current)
+                         .bindPopup(`<b class="font-bold">${dev.name}</b><br><span class="text-xs text-slate-500">${dev.id}</span>`);
+                    });
+                }
+            }, [view, devices]);
+
+            const handleAdd = (e) => {
+                e.preventDefault();
+                const fd = new FormData(e.target);
+                const newDev = { 
+                    id: fd.get('id'), 
+                    name: fd.get('name'), 
+                    lat: parseFloat(fd.get('lat')), 
+                    lng: parseFloat(fd.get('lng')) 
+                };
+                const updated = [...devices, newDev];
+                setDevices(updated);
+                localStorage.setItem("user_devices", JSON.stringify(updated));
+                e.target.reset();
+                setView('map');
+            };
+
+            return (
+                <div className="flex h-screen w-full">
+                    {/* SIDEBAR */}
+                    <aside className="w-80 border-r border-slate-200 bg-white p-6 flex flex-col z-20 shadow-xl">
+                        <div className="flex items-center gap-3 mb-10">
+                            <div className="h-10 w-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                                <i data-lucide="satellite"></i>
+                            </div>
+                            <span className="font-black text-xl tracking-tighter italic">AETHER MAPS</span>
+                        </div>
+
+                        <nav className="flex-1 space-y-2">
+                            <button onClick={() => setView('map')} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${view==='map'?'bg-slate-100 text-indigo-600':'text-slate-400'}`}>
+                                <i data-lucide="map"></i> Live View
+                            </button>
+                            <button onClick={() => setView('add')} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${view==='add'?'bg-slate-100 text-indigo-600':'text-slate-400'}`}>
+                                <i data-lucide="plus-circle"></i> Provision Node
+                            </button>
+                        </nav>
+                        
+                        <div className="mt-auto bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Status</p>
+                            <div className="flex items-center gap-2 text-xs font-bold text-emerald-600">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                Geospatial Sync Active
+                            </div>
+                        </div>
+                    </aside>
+
+                    {/* MAP CONTENT */}
+                    <main className="flex-1 p-8 bg-slate-50 flex flex-col">
+                        {view === 'map' ? (
+                            <div className="flex-1 relative bg-slate-900 rounded-[2.5rem] overflow-hidden shadow-2xl border-8 border-white">
+                                <div id="map"></div>
+                                <div className="absolute top-6 left-6 z-[1000] pointer-events-none">
+                                    <div className="bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-lg border border-white/20">
+                                        <h2 className="text-slate-900 font-black tracking-tighter text-xl uppercase italic">Network Layer</h2>
+                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-none">Global Environmental Index</p>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="h-full flex items-center justify-center">
+                                <form onSubmit={handleAdd} className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100 w-full max-w-md">
+                                    <h2 className="text-2xl font-black mb-6 uppercase tracking-tighter">Register New Lat/Lng</h2>
+                                    <div className="space-y-4">
+                                        <input name="id" placeholder="LASS Device ID" className="w-full bg-slate-50 p-4 rounded-2xl text-sm border-none outline-none focus:ring-2 ring-indigo-500" required />
+                                        <input name="name" placeholder="Location Name" className="w-full bg-slate-50 p-4 rounded-2xl text-sm border-none outline-none focus:ring-2 ring-indigo-500" required />
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <input name="lat" type="number" step="any" placeholder="Latitude (e.g. 25.0)" className="bg-slate-50 p-4 rounded-2xl text-sm" required />
+                                            <input name="lng" type="number" step="any" placeholder="Longitude (e.g. 121.5)" className="bg-slate-50 p-4 rounded-2xl text-sm" required />
+                                        </div>
+                                        <button className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest mt-4 shadow-xl shadow-slate-200">Deploy to Map</button>
+                                    </div>
+                                </form>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+        setTimeout(() => lucide.createIcons(), 500);
+    </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aether | Geospatial Command Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        #map { height: 100%; width: 100%; border-radius: 2rem; z-index: 1; }
+        .leaflet-container { background: #020617 !important; }
+        /* Professional Pulse Marker */
+        .custom-pulse {
+            width: 12px; height: 12px; background: #6366f1; border-radius: 50%;
+            box-shadow: 0 0 0 rgba(99, 102, 241, 0.4); animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); } 70% { box-shadow: 0 0 0 20px rgba(99, 102, 241, 0); } 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); } }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans overflow-hidden">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const App = () => {
+            const [view, setView] = useState('map');
+            const [devices, setDevices] = useState(() => {
+                const saved = localStorage.getItem("user_devices");
+                return saved ? JSON.parse(saved) : [
+                    { id: 'B827EB63D1C8', name: 'Base Station', lat: 25.0330, lng: 121.5654 }
+                ];
+            });
+            const mapRef = useRef(null);
+            const leafletMap = useRef(null);
+
+            // Initialize Leaflet Map
+            useEffect(() => {
+                if (view === 'map' && !leafletMap.current) {
+                    // Create map centered on first device
+                    leafletMap.current = L.map('map', { zoomControl: false }).setView([devices[0].lat, devices[0].lng], 12);
+                    
+                    // Add Dark Mode Tiles (CartoDB Dark Matter)
+                    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                        attribution: '&copy; OpenStreetMap &copy; CARTO'
+                    }).addTo(leafletMap.current);
+                }
+
+                // Update markers whenever devices change
+                if (leafletMap.current) {
+                    // Clear old markers if necessary or just add new ones
+                    devices.forEach(dev => {
+                        const icon = L.divIcon({ className: 'custom-pulse', iconSize: [12, 12] });
+                        L.marker([dev.lat, dev.lng], { icon })
+                         .addTo(leafletMap.current)
+                         .bindPopup(`<b class="font-bold">${dev.name}</b><br><span class="text-xs text-slate-500">${dev.id}</span>`);
+                    });
+                }
+            }, [view, devices]);
+
+            const handleAdd = (e) => {
+                e.preventDefault();
+                const fd = new FormData(e.target);
+                const newDev = { 
+                    id: fd.get('id'), 
+                    name: fd.get('name'), 
+                    lat: parseFloat(fd.get('lat')), 
+                    lng: parseFloat(fd.get('lng')) 
+                };
+                const updated = [...devices, newDev];
+                setDevices(updated);
+                localStorage.setItem("user_devices", JSON.stringify(updated));
+                e.target.reset();
+                setView('map');
+            };
+
+            return (
+                <div className="flex h-screen w-full">
+                    {/* SIDEBAR */}
+                    <aside className="w-80 border-r border-slate-200 bg-white p-6 flex flex-col z-20 shadow-xl">
+                        <div className="flex items-center gap-3 mb-10">
+                            <div className="h-10 w-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                                <i data-lucide="satellite"></i>
+                            </div>
+                            <span className="font-black text-xl tracking-tighter italic">AETHER MAPS</span>
+                        </div>
+
+                        <nav className="flex-1 space-y-2">
+                            <button onClick={() => setView('map')} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${view==='map'?'bg-slate-100 text-indigo-600':'text-slate-400'}`}>
+                                <i data-lucide="map"></i> Live View
+                            </button>
+                            <button onClick={() => setView('add')} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${view==='add'?'bg-slate-100 text-indigo-600':'text-slate-400'}`}>
+                                <i data-lucide="plus-circle"></i> Provision Node
+                            </button>
+                        </nav>
+                        
+                        <div className="mt-auto bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Status</p>
+                            <div className="flex items-center gap-2 text-xs font-bold text-emerald-600">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                Geospatial Sync Active
+                            </div>
+                        </div>
+                    </aside>
+
+                    {/* MAP CONTENT */}
+                    <main className="flex-1 p-8 bg-slate-50 flex flex-col">
+                        {view === 'map' ? (
+                            <div className="flex-1 relative bg-slate-900 rounded-[2.5rem] overflow-hidden shadow-2xl border-8 border-white">
+                                <div id="map"></div>
+                                <div className="absolute top-6 left-6 z-[1000] pointer-events-none">
+                                    <div className="bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-lg border border-white/20">
+                                        <h2 className="text-slate-900 font-black tracking-tighter text-xl uppercase italic">Network Layer</h2>
+                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-none">Global Environmental Index</p>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="h-full flex items-center justify-center">
+                                <form onSubmit={handleAdd} className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100 w-full max-w-md">
+                                    <h2 className="text-2xl font-black mb-6 uppercase tracking-tighter">Register New Lat/Lng</h2>
+                                    <div className="space-y-4">
+                                        <input name="id" placeholder="LASS Device ID" className="w-full bg-slate-50 p-4 rounded-2xl text-sm border-none outline-none focus:ring-2 ring-indigo-500" required />
+                                        <input name="name" placeholder="Location Name" className="w-full bg-slate-50 p-4 rounded-2xl text-sm border-none outline-none focus:ring-2 ring-indigo-500" required />
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <input name="lat" type="number" step="any" placeholder="Latitude (e.g. 25.0)" className="bg-slate-50 p-4 rounded-2xl text-sm" required />
+                                            <input name="lng" type="number" step="any" placeholder="Longitude (e.g. 121.5)" className="bg-slate-50 p-4 rounded-2xl text-sm" required />
+                                        </div>
+                                        <button className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest mt-4 shadow-xl shadow-slate-200">Deploy to Map</button>
+                                    </div>
+                                </form>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+        setTimeout(() => lucide.createIcons(), 500);
+    </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aether | Geospatial Command Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        #map { height: 100%; width: 100%; border-radius: 2rem; z-index: 1; }
+        .leaflet-container { background: #020617 !important; }
+        /* Professional Pulse Marker */
+        .custom-pulse {
+            width: 12px; height: 12px; background: #6366f1; border-radius: 50%;
+            box-shadow: 0 0 0 rgba(99, 102, 241, 0.4); animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); } 70% { box-shadow: 0 0 0 20px rgba(99, 102, 241, 0); } 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); } }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans overflow-hidden">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const App = () => {
+            const [view, setView] = useState('map');
+            const [devices, setDevices] = useState(() => {
+                const saved = localStorage.getItem("user_devices");
+                return saved ? JSON.parse(saved) : [
+                    { id: 'B827EB63D1C8', name: 'Base Station', lat: 25.0330, lng: 121.5654 }
+                ];
+            });
+            const mapRef = useRef(null);
+            const leafletMap = useRef(null);
+
+            // Initialize Leaflet Map
+            useEffect(() => {
+                if (view === 'map' && !leafletMap.current) {
+                    // Create map centered on first device
+                    leafletMap.current = L.map('map', { zoomControl: false }).setView([devices[0].lat, devices[0].lng], 12);
+                    
+                    // Add Dark Mode Tiles (CartoDB Dark Matter)
+                    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                        attribution: '&copy; OpenStreetMap &copy; CARTO'
+                    }).addTo(leafletMap.current);
+                }
+
+                // Update markers whenever devices change
+                if (leafletMap.current) {
+                    // Clear old markers if necessary or just add new ones
+                    devices.forEach(dev => {
+                        const icon = L.divIcon({ className: 'custom-pulse', iconSize: [12, 12] });
+                        L.marker([dev.lat, dev.lng], { icon })
+                         .addTo(leafletMap.current)
+                         .bindPopup(`<b class="font-bold">${dev.name}</b><br><span class="text-xs text-slate-500">${dev.id}</span>`);
+                    });
+                }
+            }, [view, devices]);
+
+            const handleAdd = (e) => {
+                e.preventDefault();
+                const fd = new FormData(e.target);
+                const newDev = { 
+                    id: fd.get('id'), 
+                    name: fd.get('name'), 
+                    lat: parseFloat(fd.get('lat')), 
+                    lng: parseFloat(fd.get('lng')) 
+                };
+                const updated = [...devices, newDev];
+                setDevices(updated);
+                localStorage.setItem("user_devices", JSON.stringify(updated));
+                e.target.reset();
+                setView('map');
+            };
+
+            return (
+                <div className="flex h-screen w-full">
+                    {/* SIDEBAR */}
+                    <aside className="w-80 border-r border-slate-200 bg-white p-6 flex flex-col z-20 shadow-xl">
+                        <div className="flex items-center gap-3 mb-10">
+                            <div className="h-10 w-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                                <i data-lucide="satellite"></i>
+                            </div>
+                            <span className="font-black text-xl tracking-tighter italic">AETHER MAPS</span>
+                        </div>
+
+                        <nav className="flex-1 space-y-2">
+                            <button onClick={() => setView('map')} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${view==='map'?'bg-slate-100 text-indigo-600':'text-slate-400'}`}>
+                                <i data-lucide="map"></i> Live View
+                            </button>
+                            <button onClick={() => setView('add')} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${view==='add'?'bg-slate-100 text-indigo-600':'text-slate-400'}`}>
+                                <i data-lucide="plus-circle"></i> Provision Node
+                            </button>
+                        </nav>
+                        
+                        <div className="mt-auto bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Status</p>
+                            <div className="flex items-center gap-2 text-xs font-bold text-emerald-600">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                Geospatial Sync Active
+                            </div>
+                        </div>
+                    </aside>
+
+                    {/* MAP CONTENT */}
+                    <main className="flex-1 p-8 bg-slate-50 flex flex-col">
+                        {view === 'map' ? (
+                            <div className="flex-1 relative bg-slate-900 rounded-[2.5rem] overflow-hidden shadow-2xl border-8 border-white">
+                                <div id="map"></div>
+                                <div className="absolute top-6 left-6 z-[1000] pointer-events-none">
+                                    <div className="bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-lg border border-white/20">
+                                        <h2 className="text-slate-900 font-black tracking-tighter text-xl uppercase italic">Network Layer</h2>
+                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-none">Global Environmental Index</p>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="h-full flex items-center justify-center">
+                                <form onSubmit={handleAdd} className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100 w-full max-w-md">
+                                    <h2 className="text-2xl font-black mb-6 uppercase tracking-tighter">Register New Lat/Lng</h2>
+                                    <div className="space-y-4">
+                                        <input name="id" placeholder="LASS Device ID" className="w-full bg-slate-50 p-4 rounded-2xl text-sm border-none outline-none focus:ring-2 ring-indigo-500" required />
+                                        <input name="name" placeholder="Location Name" className="w-full bg-slate-50 p-4 rounded-2xl text-sm border-none outline-none focus:ring-2 ring-indigo-500" required />
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <input name="lat" type="number" step="any" placeholder="Latitude (e.g. 25.0)" className="bg-slate-50 p-4 rounded-2xl text-sm" required />
+                                            <input name="lng" type="number" step="any" placeholder="Longitude (e.g. 121.5)" className="bg-slate-50 p-4 rounded-2xl text-sm" required />
+                                        </div>
+                                        <button className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest mt-4 shadow-xl shadow-slate-200">Deploy to Map</button>
+                                    </div>
+                                </form>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+        setTimeout(() => lucide.createIcons(), 500);
+    </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </body>
 </html>
